@@ -2,8 +2,8 @@ name: Feature Pipeline - Hourly
 
 on:
   schedule:
-    - cron: "0 * * * *"  # runs every hour
-  workflow_dispatch:       # allows manual trigger
+    - cron: "0 * * * *"
+  workflow_dispatch:
 
 jobs:
   run-feature-pipeline:
@@ -23,10 +23,10 @@ jobs:
 
       - name: Run feature pipeline
         env:
-          AQICN_TOKEN:      ${{ secrets.AQICN_TOKEN }}
-          CITY:             ${{ secrets.CITY }}
+          AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
+          CITY: ${{ secrets.CITY }}
           DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
-          DAGSHUB_REPO:     ${{ secrets.DAGSHUB_REPO }}
+          DAGSHUB_REPO: ${{ secrets.DAGSHUB_REPO }}
         run: python -m src.feature_pipeline
 
       - name: Commit updated feature store
