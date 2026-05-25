@@ -232,7 +232,9 @@ def run():
     """Load data → train 5 models x 3 days → save best 3 to MLflow."""
     print("[INFO] Starting training pipeline...")
 
-    # Connect to DagHub MLflow
+    # Connect to DagHub MLflow using token for CI/CD environments
+    os.environ["DAGSHUB_USER_TOKEN"] = os.getenv("DAGSHUB_TOKEN", "")
+    
     dagshub.init(
         repo_owner=DAGSHUB_USERNAME,
         repo_name=DAGSHUB_REPO,
