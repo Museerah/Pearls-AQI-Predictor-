@@ -1,0 +1,15 @@
+# Secret keys - never push these
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# VS Code
+.vscode/
+
+# Temp files
+tmp/
