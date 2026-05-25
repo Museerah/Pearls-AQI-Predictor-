@@ -232,14 +232,21 @@ def run():
     """Load data → train 5 models x 3 days → save best 3 to MLflow."""
     print("[INFO] Starting training pipeline...")
 
-    # Connect to DagHub MLflow using token for CI/CD environments
-    os.environ["DAGSHUB_USER_TOKEN"] = os.getenv("DAGSHUB_TOKEN", "")
-    
-    dagshub.init(
-        repo_owner=DAGSHUB_USERNAME,
-        repo_name=DAGSHUB_REPO,
-        mlflow=True
-    )
+    # Set DagHub token for CI/CD — must be set before dagshub.init
+    dagshub_token = os.getenv("DAGSHUB_TOKEN", "")
+    if dagshub_token:
+        os.environ["DAGSHUB_USER_TOKEN"] = dagshub_token
+        mlflow.set_tracking_uri(
+            f"https://dagshub.com/{os.getenv('DAGSHUB_USERNAME')}/{os.getenv('DAGSHUB_REPO')}.mlflow"
+        )
+        os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv("DAGSHUB_USERNAME", "")
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+    else:
+        dagshub.init(
+            repo_owner=DAGSHUB_USERNAME,
+            repo_name=DAGSHUB_REPO,
+            mlflow=True
+        )
 
     df = load_features()
 
