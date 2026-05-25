@@ -1,0 +1,38 @@
+name: Feature Pipeline - Hourly
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # runs every hour
+  workflow_dispatch:       # allows manual trigger
+
+jobs:
+  run-feature-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run feature pipeline
+        env:
+          AQICN_TOKEN:      ${{ secrets.AQICN_TOKEN }}
+          CITY:             ${{ secrets.CITY }}
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_REPO:     ${{ secrets.DAGSHUB_REPO }}
+        run: python -m src.feature_pipeline
+
+      - name: Commit updated feature store
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git add data/features.parquet
+          git diff --staged --quiet || git commit -m "chore: update feature store"
+          git push

@@ -1,0 +1,30 @@
+name: Training Pipeline - Daily
+
+on:
+  schedule:
+    - cron: "0 2 * * *"  # runs every day at 2am UTC
+  workflow_dispatch:       # allows manual trigger
+
+jobs:
+  run-training-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run training pipeline
+        env:
+          AQICN_TOKEN:      ${{ secrets.AQICN_TOKEN }}
+          CITY:             ${{ secrets.CITY }}
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_REPO:     ${{ secrets.DAGSHUB_REPO }}
+        run: python -m src.training_pipeline

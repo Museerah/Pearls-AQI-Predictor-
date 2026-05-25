@@ -1,0 +1,11 @@
+requests
+python-dotenv
+pandas
+scikit-learn
+xgboost
+torch
+joblib
+pyarrow
+dagshub
+mlflow
+feast
