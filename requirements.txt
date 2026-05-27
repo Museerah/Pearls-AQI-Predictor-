@@ -9,3 +9,5 @@ pyarrow
 dagshub
 mlflow
 feast
+plotly
+streamlit
