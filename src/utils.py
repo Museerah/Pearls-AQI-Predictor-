@@ -13,7 +13,7 @@ def get_env(key: str) -> str:
 
 
 # --- API Config ---
-AQICN_TOKEN = get_env("AQICN_TOKEN")
+AQICN_TOKEN = os.getenv("AQICN_TOKEN", "")  
 
 # --- City Config ---
 CITY     = get_env("CITY")   # karachi
