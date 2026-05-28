@@ -1,7 +1,7 @@
 ---
 title: Pearls AQI Predictor
 sdk: gradio
-python_version: "3.10"
+python_version: "3.11"
 app_file: app.py
 pinned: false
 ---
