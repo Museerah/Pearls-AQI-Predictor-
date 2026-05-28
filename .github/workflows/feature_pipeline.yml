@@ -14,33 +14,47 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-pipeline.txt
 
       - name: Run feature pipeline
         env:
-          AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
           CITY: ${{ secrets.CITY }}
-          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
-          DAGSHUB_REPO: ${{ secrets.DAGSHUB_REPO }}
         run: python -m src.feature_pipeline
 
-      - name: Commit updated feature store
+      - name: Configure DVC remote (DagsHub)
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_REPO: ${{ secrets.DAGSHUB_REPO }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          dvc remote add -f -d dagshub "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO}.dvc"
+          dvc remote modify dagshub auth basic
+          dvc remote modify --local dagshub user "${DAGSHUB_USERNAME}"
+          dvc remote modify --local dagshub password "${DAGSHUB_TOKEN}"
+
+      - name: Track and push features with DVC
+        run: |
+          dvc add data/features.parquet
+          dvc push data/features.parquet.dvc
+
+      - name: Commit lightweight DVC metadata
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git add data/features.parquet
-          git diff --staged --quiet || git commit -m "chore: update feature store"
+          git add data/features.parquet.dvc .gitignore
+          git diff --staged --quiet || git commit -m "chore: update DVC feature metadata"
           git push

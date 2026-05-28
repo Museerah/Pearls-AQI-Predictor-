@@ -1,195 +1,156 @@
 """
-Predict Script — called by the Streamlit web app.
-
-What it does:
-1. Loads the 3 best models from MLflow on DagHub
-2. Fetches current weather + air quality from OpenMeteo
-3. Predicts AQI for next 3 days
-4. Returns predictions as a clean DataFrame
+Prediction module for Karachi AQI day1/day2/day3 forecasts.
+Loads models from MLflow Model Registry on DagsHub.
 """
 
-import os
-import joblib
-import numpy as np
-import pandas as pd
-import torch
-import mlflow
-import mlflow.sklearn
-import dagshub
 from datetime import datetime, timedelta
+import os
 
-from src.utils import (
-    CITY, CITY_LAT, CITY_LON,
-    WEATHER_FORECAST_URL, AIR_QUALITY_URL,
-    DAGSHUB_USERNAME, DAGSHUB_REPO,
-    FEATURE_COLUMNS
-)
+import mlflow
+import pandas as pd
+import requests
+from mlflow.exceptions import MlflowException
+from mlflow.tracking import MlflowClient
 
-
-# ── 1. Load Models from MLflow ────────────────────────────────────────────────
-
-def load_model(forecast_day: int):
-    """Load best model + scaler for a given forecast day from MLflow."""
-    model_dir = f"tmp/models/day{forecast_day}"
-
-    model_info = joblib.load(f"{model_dir}/model_info.pkl")
-    scaler     = joblib.load(f"{model_dir}/scaler.pkl")
-
-    if model_info["type"] == "pytorch":
-        from src.training_pipeline import AQINet
-        model = AQINet(input_size=len(FEATURE_COLUMNS))
-        model.load_state_dict(torch.load(f"{model_dir}/model.pt"))
-        model.eval()
-    else:
-        model = joblib.load(f"{model_dir}/model.pkl")
-
-    return model, scaler, model_info
+from src.utils import AIR_QUALITY_URL, FEATURE_COLUMNS, WEATHER_FORECAST_URL, get_city_config, get_mlflow_tracking_uri
 
 
-# ── 2. Fetch Current Conditions ───────────────────────────────────────────────
+def setup_mlflow() -> None:
+    tracking_uri = get_mlflow_tracking_uri()
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_registry_uri(tracking_uri)
+    dagshub_token = os.getenv("DAGSHUB_TOKEN", "")
+    if dagshub_token:
+        os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv("DAGSHUB_USERNAME", "")
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
 
-def fetch_current_conditions() -> dict:
+
+def load_model(forecast_day: int, city: str):
+    """Load registered model for a forecast day."""
+    model_name = f"aqi_{city}_day{forecast_day}"
+    client = MlflowClient()
+
+    alias_uri = f"models:/{model_name}@production"
+    try:
+        alias_version = client.get_model_version_by_alias(model_name, "production")
+        model_uri = f"models:/{model_name}/{alias_version.version}"
+    except MlflowException:
+        versions = client.search_model_versions(f"name='{model_name}'")
+        if not versions:
+            raise ValueError(f"No registered versions found for {model_name}")
+        latest = max(versions, key=lambda version: int(version.version))
+        model_uri = f"models:/{model_name}/{latest.version}"
+
+    print(f"[INFO] Loading model: {model_uri}")
+    return mlflow.pyfunc.load_model(model_uri)
+
+
+def fetch_current_conditions(city_lat: float, city_lon: float) -> dict:
     """Fetch current weather + air quality for Karachi."""
-    import requests
-
     now_hour = datetime.utcnow().hour
 
-    # Weather
     weather_params = {
-        "latitude":      CITY_LAT,
-        "longitude":     CITY_LON,
-        "hourly":        "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,surface_pressure",
+        "latitude": city_lat,
+        "longitude": city_lon,
+        "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,surface_pressure",
         "forecast_days": 1,
-        "timezone":      "UTC",
+        "timezone": "UTC",
     }
     weather_resp = requests.get(WEATHER_FORECAST_URL, params=weather_params, timeout=10)
     weather_resp.raise_for_status()
     weather = weather_resp.json()["hourly"]
 
-    # Air quality
     air_params = {
-        "latitude":      CITY_LAT,
-        "longitude":     CITY_LON,
-        "hourly":        "pm2_5,pm10,nitrogen_dioxide,ozone,us_aqi",
+        "latitude": city_lat,
+        "longitude": city_lon,
+        "hourly": "pm2_5,pm10,nitrogen_dioxide,ozone,us_aqi",
         "forecast_days": 1,
-        "timezone":      "UTC",
+        "timezone": "UTC",
     }
     air_resp = requests.get(AIR_QUALITY_URL, params=air_params, timeout=10)
     air_resp.raise_for_status()
     air = air_resp.json()["hourly"]
 
     return {
-        "temperature":      float(weather["temperature_2m"][now_hour]),
-        "humidity":         float(weather["relative_humidity_2m"][now_hour]),
-        "wind_speed":       float(weather["wind_speed_10m"][now_hour]),
-        "precipitation":    float(weather["precipitation"][now_hour]),
+        "temperature": float(weather["temperature_2m"][now_hour]),
+        "humidity": float(weather["relative_humidity_2m"][now_hour]),
+        "wind_speed": float(weather["wind_speed_10m"][now_hour]),
+        "precipitation": float(weather["precipitation"][now_hour]),
         "surface_pressure": float(weather["surface_pressure"][now_hour]),
-        "pm2_5":            float(air["pm2_5"][now_hour]            or 0),
-        "pm10":             float(air["pm10"][now_hour]             or 0),
-        "no2":              float(air["nitrogen_dioxide"][now_hour] or 0),
-        "ozone":            float(air["ozone"][now_hour]            or 0),
-        "aqi":              float(air["us_aqi"][now_hour]           or 0),
+        "pm2_5": float(air["pm2_5"][now_hour] or 0),
+        "pm10": float(air["pm10"][now_hour] or 0),
+        "no2": float(air["nitrogen_dioxide"][now_hour] or 0),
+        "ozone": float(air["ozone"][now_hour] or 0),
+        "aqi": float(air["us_aqi"][now_hour] or 0),
     }
 
 
-# ── 3. Build Input Row ────────────────────────────────────────────────────────
-
 def build_input(conditions: dict) -> pd.DataFrame:
-    """Build a single feature row from current conditions."""
+    """Build one feature row from current conditions."""
     now = datetime.utcnow()
 
     row = {
-        "hour":             int(now.hour),
-        "day":              int(now.day),
-        "month":            int(now.month),
-        "day_of_week":      int(now.weekday()),
-        "temperature":      conditions["temperature"],
-        "humidity":         conditions["humidity"],
-        "wind_speed":       conditions["wind_speed"],
-        "precipitation":    conditions["precipitation"],
+        "hour": int(now.hour),
+        "day": int(now.day),
+        "month": int(now.month),
+        "day_of_week": int(now.weekday()),
+        "temperature": conditions["temperature"],
+        "humidity": conditions["humidity"],
+        "wind_speed": conditions["wind_speed"],
+        "precipitation": conditions["precipitation"],
         "surface_pressure": conditions["surface_pressure"],
-        "pm2_5":            conditions["pm2_5"],
-        "pm10":             conditions["pm10"],
-        "no2":              conditions["no2"],
-        "ozone":            conditions["ozone"],
+        "pm2_5": conditions["pm2_5"],
+        "pm10": conditions["pm10"],
+        "no2": conditions["no2"],
+        "ozone": conditions["ozone"],
     }
-
     return pd.DataFrame([row])[FEATURE_COLUMNS]
 
 
-# ── 4. AQI Category ───────────────────────────────────────────────────────────
-
-def get_aqi_category(aqi: float) -> tuple:
-    """
-    Return AQI category label and color based on US AQI scale.
-    Used by Streamlit dashboard to color code predictions.
-    """
+def get_aqi_category(aqi: float) -> tuple[str, str]:
+    """Return AQI category label and badge color (US AQI scale)."""
     if aqi <= 50:
         return "Good", "#00e400"
-    elif aqi <= 100:
+    if aqi <= 100:
         return "Moderate", "#ffff00"
-    elif aqi <= 150:
+    if aqi <= 150:
         return "Unhealthy for Sensitive Groups", "#ff7e00"
-    elif aqi <= 200:
+    if aqi <= 200:
         return "Unhealthy", "#ff0000"
-    elif aqi <= 300:
+    if aqi <= 300:
         return "Very Unhealthy", "#8f3f97"
-    else:
-        return "Hazardous", "#7e0023"
+    return "Hazardous", "#7e0023"
 
-
-# ── 5. Run Predictions ────────────────────────────────────────────────────────
 
 def predict_next_3_days() -> pd.DataFrame:
-    """
-    Load models, fetch current conditions, predict AQI for next 3 days.
-    Returns a clean DataFrame with predictions.
-    """
-    print("[INFO] Loading current conditions...")
-    conditions = fetch_current_conditions()
+    """Predict AQI for next day1/day2/day3 using latest registry models."""
+    city, city_lat, city_lon = get_city_config()
+    setup_mlflow()
+
+    conditions = fetch_current_conditions(city_lat, city_lon)
     X = build_input(conditions)
 
     predictions = []
-
     for forecast_day in [1, 2, 3]:
-        model, scaler, model_info = load_model(forecast_day)
+        model = load_model(forecast_day, city)
+        aqi_pred = float(model.predict(X)[0])
+        aqi_pred = max(0.0, min(500.0, aqi_pred))
 
-        # Scale if needed
-        X_input = scaler.transform(X) if model_info["needs_scaling"] else X.values
-
-        # Predict
-        if model_info["type"] == "pytorch":
-            X_tensor = torch.tensor(X_input, dtype=torch.float32)
-            with torch.no_grad():
-                aqi_pred = float(model(X_tensor).numpy()[0])
-        else:
-            aqi_pred = float(model.predict(X_input)[0])
-
-        # Clip to valid AQI range
-        aqi_pred = max(0, min(500, aqi_pred))
-
-        date        = (datetime.utcnow() + timedelta(days=forecast_day)).strftime("%Y-%m-%d")
+        date = (datetime.utcnow() + timedelta(days=forecast_day)).strftime("%Y-%m-%d")
         category, color = get_aqi_category(aqi_pred)
 
-        predictions.append({
-            "day":      f"Day {forecast_day}",
-            "date":     date,
-            "aqi":      round(aqi_pred, 1),
-            "category": category,
-            "color":    color,
-        })
-
-        print(f"[INFO] Day {forecast_day} ({date}): AQI = {round(aqi_pred, 1)} — {category}")
+        predictions.append(
+            {
+                "day": f"Day {forecast_day}",
+                "date": date,
+                "aqi": round(aqi_pred, 1),
+                "category": category,
+                "color": color,
+            }
+        )
 
     return pd.DataFrame(predictions)
 
 
 if __name__ == "__main__":
-    # Initialize DagHub
-    dagshub.init(
-        repo_owner=DAGSHUB_USERNAME,
-        repo_name=DAGSHUB_REPO,
-        mlflow=True
-    )
-    df = predict_next_3_days()
-    print(df)
+    print(predict_next_3_days())
