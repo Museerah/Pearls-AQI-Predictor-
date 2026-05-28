@@ -1,3 +1,10 @@
+---
+title: Pearls AQI Predictor
+sdk: gradio
+app_file: app.py
+pinned: false
+---
+
 # Pearls AQI Predictor (Karachi) — 100% Serverless
 
 A serverless end-to-end AQI prediction system for **Karachi only** that forecasts AQI for the next 3 days.
