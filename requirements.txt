@@ -1,12 +1,20 @@
 requests==2.32.3
 python-dotenv==1.0.1
-pandas>=2.2,<2.3
+
+# Core numerics / ML
 numpy==1.26.4
+pandas>=2.2,<2.3
 scikit-learn==1.5.1
+scipy>=1.10,<2.0
 joblib==1.4.2
 pyarrow==17.0.0
+xgboost==3.2.0
+
+# Tracking / registry
 dagshub==0.5.10
 mlflow==3.12.0
+
+# HF / UI support
 huggingface-hub>=0.33.5,<2.0
 plotly==5.24.1
 protobuf==4.25.9
