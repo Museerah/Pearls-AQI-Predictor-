@@ -9,6 +9,7 @@ import os
 import mlflow
 import pandas as pd
 import requests
+from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 
 from src.utils import AIR_QUALITY_URL, FEATURE_COLUMNS, WEATHER_FORECAST_URL, get_city_config, get_mlflow_tracking_uri
@@ -31,9 +32,9 @@ def load_model(forecast_day: int, city: str):
 
     alias_uri = f"models:/{model_name}@production"
     try:
-        client.get_model_version_by_alias(model_name, "production")
-        model_uri = alias_uri
-    except Exception:
+        alias_version = client.get_model_version_by_alias(model_name, "production")
+        model_uri = f"models:/{model_name}/{alias_version.version}"
+    except MlflowException:
         versions = client.search_model_versions(f"name='{model_name}'")
         if not versions:
             raise ValueError(f"No registered versions found for {model_name}")

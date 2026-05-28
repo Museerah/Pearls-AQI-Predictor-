@@ -79,8 +79,8 @@ def train_for_day(df: pd.DataFrame, forecast_day: int):
     X_train, X_test, y_train, y_test = prepare_data(df, forecast_day)
 
     candidates = {
-        "random_forest": RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1),
-        "gradient_boosting": GradientBoostingRegressor(n_estimators=200, random_state=42),
+        "random_forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
+        "gradient_boosting": GradientBoostingRegressor(n_estimators=100, random_state=42),
         "ridge": Pipeline([("scaler", StandardScaler()), ("model", Ridge(alpha=1.0))]),
     }
 
@@ -96,23 +96,13 @@ def train_for_day(df: pd.DataFrame, forecast_day: int):
     return best_name, best_model, best_metrics
 
 
-def register_production_alias(model_name: str) -> None:
-    """Point @production alias to latest version."""
-    client = MlflowClient()
-    versions = client.search_model_versions(f"name='{model_name}'")
-    if not versions:
-        return
-
-    latest = max(versions, key=lambda version: int(version.version))
-    client.set_registered_model_alias(model_name, "production", latest.version)
-
-
 def save_model(best_model, metrics: dict, forecast_day: int, best_name: str, city: str, feature_rows: int) -> None:
     """Log run and register model version for a forecast day."""
+    run_stamp = datetime.utcnow().strftime("%Y-%m-%d_%H%M")
     train_date = datetime.utcnow().strftime("%Y-%m-%d")
     registry_name = f"aqi_{city}_day{forecast_day}"
 
-    with mlflow.start_run(run_name=f"{city}_day{forecast_day}_{best_name}_{train_date}") as run:
+    with mlflow.start_run(run_name=f"{city}_day{forecast_day}_{best_name}_{run_stamp}") as run:
         mlflow.log_params(
             {
                 "city": city,
@@ -145,8 +135,8 @@ def save_model(best_model, metrics: dict, forecast_day: int, best_name: str, cit
             client.set_model_version_tag(registry_name, latest.version, "forecast_day", str(forecast_day))
             client.set_model_version_tag(registry_name, latest.version, "training_date", train_date)
             client.set_model_version_tag(registry_name, latest.version, "run_id", run.info.run_id)
+            client.set_registered_model_alias(registry_name, "production", latest.version)
 
-    register_production_alias(registry_name)
     print(f"[OK] Day {forecast_day} registered as {registry_name}@production")
 
 

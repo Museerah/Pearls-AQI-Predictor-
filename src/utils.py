@@ -10,11 +10,6 @@ KARACHI_LON = 67.0011
 # --- API Config ---
 AQICN_TOKEN = os.getenv("AQICN_TOKEN", "")
 
-# --- City Config ---
-CITY = os.getenv("CITY", KARACHI_CITY).strip().lower()
-CITY_LAT = KARACHI_LAT
-CITY_LON = KARACHI_LON
-
 # --- OpenMeteo URLs ---
 WEATHER_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"

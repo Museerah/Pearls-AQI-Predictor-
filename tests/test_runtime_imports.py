@@ -15,6 +15,9 @@ class RuntimeImportTests(unittest.TestCase):
             importlib.reload(src.utils)
             importlib.reload(src.predict)
             importlib.reload(src.feature_pipeline)
+            self.assertTrue(hasattr(src.utils, "get_city_config"))
+            self.assertTrue(hasattr(src.predict, "predict_next_3_days"))
+            self.assertTrue(hasattr(src.feature_pipeline, "run"))
         finally:
             for key, value in backup.items():
                 if value is not None:
