@@ -1,5 +1,6 @@
 # Secret keys - never push these
 .env
+.dvc/config.local
 
 # Python cache
 __pycache__/
@@ -13,3 +14,6 @@ venv/
 
 # Temp files
 tmp/
+
+# DVC-tracked data artifact
+data/features.parquet
