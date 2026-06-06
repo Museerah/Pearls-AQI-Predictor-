@@ -48,16 +48,16 @@ def load_features() -> pd.DataFrame:
 
 
 def prepare_data(df: pd.DataFrame, forecast_day: int):
-    """Prepare train/test split for a forecast horizon in days."""
-    data = df.sort_values("timestamp").reset_index(drop=True).copy()
-
+    df = df.sort_values("timestamp").reset_index(drop=True)
     shift = forecast_day * 24
-    data["target"] = data[TARGET_COLUMN].shift(-shift)
-    data = data.dropna(subset=["target"] + FEATURE_COLUMNS)
+    df["target"] = df[TARGET_COLUMN].shift(-shift)
+    df = df.dropna(subset=["target"] + FEATURE_COLUMNS)
 
-    X = data[FEATURE_COLUMNS].astype(float)
-    y = data["target"].astype(float)
+    if len(df) < 50:
+        raise ValueError(f"Not enough data: {len(df)} rows. Need at least 50. Run backfill first.")
 
+    X = df[FEATURE_COLUMNS].astype(float)
+    y = df["target"].astype(float)
     return train_test_split(X, y, test_size=0.2, random_state=42)
 
 
