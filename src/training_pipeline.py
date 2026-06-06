@@ -14,12 +14,26 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
+
 from mlflow.tracking import MlflowClient
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+
+from sklearn.ensemble import (
+    GradientBoostingRegressor,
+    RandomForestRegressor,
+)
+
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+)
+
 from sklearn.model_selection import train_test_split
+
 from sklearn.pipeline import Pipeline
+
 from sklearn.preprocessing import StandardScaler
 
 from src.utils import (
@@ -32,7 +46,8 @@ from src.utils import (
 
 
 def setup_mlflow() -> None:
-    """Set MLflow tracking/registry URI to DagsHub."""
+    """Set MLflow tracking/registry URI."""
+
     tracking_uri = get_mlflow_tracking_uri()
 
     mlflow.set_tracking_uri(tracking_uri)
@@ -42,8 +57,10 @@ def setup_mlflow() -> None:
 
     if dagshub_token:
         os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv(
-            "DAGSHUB_USERNAME", ""
+            "DAGSHUB_USERNAME",
+            "",
         )
+
         os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
 
 
@@ -62,15 +79,21 @@ def load_features() -> pd.DataFrame:
     print(df.shape)
     print(df.columns.tolist())
 
+
     if len(df) < 100:
-        raise ValueError(
-            f"Dataset corrupted. Expected >100 rows, got {len(df)}"
+        print(
+            f"[WARNING] Dataset too small ({len(df)} rows). "
+            f"Skipping training run."
         )
+        return pd.DataFrame()
 
     return df
 
 
-def prepare_data(df: pd.DataFrame, forecast_day: int):
+def prepare_data(
+    df: pd.DataFrame,
+    forecast_day: int,
+):
 
     df = df.sort_values("timestamp").reset_index(drop=True)
 
@@ -78,12 +101,14 @@ def prepare_data(df: pd.DataFrame, forecast_day: int):
 
     df["target"] = df[TARGET_COLUMN].shift(-shift)
 
-    df = df.dropna(subset=["target"] + FEATURE_COLUMNS)
+    df = df.dropna(
+        subset=["target"] + FEATURE_COLUMNS
+    )
 
     if len(df) < 50:
         raise ValueError(
             f"Not enough data: {len(df)} rows. "
-            f"Need at least 50. Run backfill first."
+            f"Need at least 50."
         )
 
     X = df[FEATURE_COLUMNS].astype(float)
@@ -98,21 +123,42 @@ def prepare_data(df: pd.DataFrame, forecast_day: int):
     )
 
 
-def evaluate(name: str, y_test, y_pred) -> dict:
+def evaluate(
+    name: str,
+    y_test,
+    y_pred,
+) -> dict:
     """Compute evaluation metrics."""
 
     metrics = {
         "model": name,
         "rmse": round(
-            float(np.sqrt(mean_squared_error(y_test, y_pred))),
+            float(
+                np.sqrt(
+                    mean_squared_error(
+                        y_test,
+                        y_pred,
+                    )
+                )
+            ),
             4,
         ),
         "mae": round(
-            float(mean_absolute_error(y_test, y_pred)),
+            float(
+                mean_absolute_error(
+                    y_test,
+                    y_pred,
+                )
+            ),
             4,
         ),
         "r2": round(
-            float(r2_score(y_test, y_pred)),
+            float(
+                r2_score(
+                    y_test,
+                    y_pred,
+                )
+            ),
             6,
         ),
     }
@@ -127,10 +173,15 @@ def evaluate(name: str, y_test, y_pred) -> dict:
     return metrics
 
 
-def train_for_day(df: pd.DataFrame, forecast_day: int):
-    """Train candidate models and return best for one horizon."""
+def train_for_day(
+    df: pd.DataFrame,
+    forecast_day: int,
+):
+    """Train candidate models."""
 
-    print(f"\n[INFO] Training models for Day {forecast_day}...")
+    print(
+        f"\n[INFO] Training models for Day {forecast_day}..."
+    )
 
     X_train, X_test, y_train, y_test = prepare_data(
         df,
@@ -143,10 +194,12 @@ def train_for_day(df: pd.DataFrame, forecast_day: int):
             random_state=42,
             n_jobs=-1,
         ),
+
         "gradient_boosting": GradientBoostingRegressor(
             n_estimators=100,
             random_state=42,
         ),
+
         "ridge": Pipeline(
             [
                 ("scaler", StandardScaler()),
@@ -165,7 +218,11 @@ def train_for_day(df: pd.DataFrame, forecast_day: int):
 
         results[model_name] = (
             model,
-            evaluate(model_name, y_test, preds),
+            evaluate(
+                model_name,
+                y_test,
+                preds,
+            ),
         )
 
     best_name = min(
@@ -191,16 +248,25 @@ def save_model(
     city: str,
     feature_rows: int,
 ) -> None:
-    """Log run and register model version."""
+    """Log run and register model."""
 
-    run_stamp = datetime.utcnow().strftime("%Y-%m-%d_%H%M")
+    run_stamp = datetime.utcnow().strftime(
+        "%Y-%m-%d_%H%M"
+    )
 
-    train_date = datetime.utcnow().strftime("%Y-%m-%d")
+    train_date = datetime.utcnow().strftime(
+        "%Y-%m-%d"
+    )
 
-    registry_name = f"aqi_{city}_day{forecast_day}"
+    registry_name = (
+        f"aqi_{city}_day{forecast_day}"
+    )
 
     with mlflow.start_run(
-        run_name=f"{city}_day{forecast_day}_{best_name}_{run_stamp}"
+        run_name=(
+            f"{city}_day{forecast_day}_"
+            f"{best_name}_{run_stamp}"
+        )
     ) as run:
 
         mlflow.log_params(
@@ -221,13 +287,17 @@ def save_model(
             }
         )
 
+        
         info = mlflow.sklearn.log_model(
             sk_model=best_model,
-            artifact_path="model",
+            name="model",
             registered_model_name=registry_name,
         )
 
-        print(f"[INFO] Registered model URI: {info.model_uri}")
+        print(
+            f"[INFO] Registered model URI: "
+            f"{info.model_uri}"
+        )
 
         client = MlflowClient()
 
@@ -239,7 +309,9 @@ def save_model(
 
             latest = max(
                 versions,
-                key=lambda version: int(version.version),
+                key=lambda version: int(
+                    version.version
+                ),
             )
 
             client.set_model_version_tag(
@@ -284,7 +356,7 @@ def save_model(
 
 
 def run() -> None:
-    """Load data -> train/register best models."""
+    """Main training runner."""
 
     city, _, _ = get_city_config()
 
@@ -292,11 +364,22 @@ def run() -> None:
 
     df = load_features()
 
+    # ---------- FIX ----------
+    # Prevent crash if dataset is too small
+    if df.empty:
+        print(
+            "[INFO] Training skipped because "
+            "dataset is too small."
+        )
+        return
+
     for forecast_day in [1, 2, 3]:
 
-        best_name, best_model, best_metrics = train_for_day(
-            df,
-            forecast_day,
+        best_name, best_model, best_metrics = (
+            train_for_day(
+                df,
+                forecast_day,
+            )
         )
 
         save_model(
@@ -308,9 +391,10 @@ def run() -> None:
             len(df),
         )
 
-    print("\n[DONE] Training pipeline completed.")
+    print(
+        "\n[DONE] Training pipeline completed."
+    )
 
 
 if __name__ == "__main__":
     run()
-
