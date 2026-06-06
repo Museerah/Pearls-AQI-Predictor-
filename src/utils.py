@@ -20,7 +20,12 @@ DAGSHUB_USERNAME = os.getenv("DAGSHUB_USERNAME", "")
 DAGSHUB_REPO = os.getenv("DAGSHUB_REPO", "")
 
 # --- Feature Store Config ---
-FEATURE_STORE_PATH = os.getenv("FEATURE_STORE_PATH", "data/features.parquet")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+FEATURE_STORE_PATH = os.getenv(
+    "FEATURE_STORE_PATH",
+    os.path.join(BASE_DIR, "data", "features.parquet")
+)
 
 # --- Feature columns used by ML models ---
 FEATURE_COLUMNS = [

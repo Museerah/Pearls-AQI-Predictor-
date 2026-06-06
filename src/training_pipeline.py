@@ -22,87 +22,187 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from src.utils import FEATURE_COLUMNS, FEATURE_STORE_PATH, TARGET_COLUMN, get_city_config, get_mlflow_tracking_uri
+from src.utils import (
+    FEATURE_COLUMNS,
+    FEATURE_STORE_PATH,
+    TARGET_COLUMN,
+    get_city_config,
+    get_mlflow_tracking_uri,
+)
 
 
 def setup_mlflow() -> None:
     """Set MLflow tracking/registry URI to DagsHub."""
     tracking_uri = get_mlflow_tracking_uri()
+
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_registry_uri(tracking_uri)
 
     dagshub_token = os.getenv("DAGSHUB_TOKEN", "")
+
     if dagshub_token:
-        os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv("DAGSHUB_USERNAME", "")
+        os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv(
+            "DAGSHUB_USERNAME", ""
+        )
         os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
 
 
 def load_features() -> pd.DataFrame:
     """Load features from parquet feature store."""
+
     if not os.path.exists(FEATURE_STORE_PATH):
-        raise FileNotFoundError(f"Feature store not found at {FEATURE_STORE_PATH}. Run feature pipeline/backfill first.")
+        raise FileNotFoundError(
+            f"Feature store not found at {FEATURE_STORE_PATH}. "
+            f"Run feature pipeline/backfill first."
+        )
 
     df = pd.read_parquet(FEATURE_STORE_PATH)
-    print(f"[INFO] Loaded {len(df)} rows from feature store.")
+
+    print(df.head())
+    print(df.shape)
+    print(df.columns.tolist())
+
+    if len(df) < 100:
+        raise ValueError(
+            f"Dataset corrupted. Expected >100 rows, got {len(df)}"
+        )
+
     return df
 
 
 def prepare_data(df: pd.DataFrame, forecast_day: int):
+
     df = df.sort_values("timestamp").reset_index(drop=True)
+
     shift = forecast_day * 24
+
     df["target"] = df[TARGET_COLUMN].shift(-shift)
+
     df = df.dropna(subset=["target"] + FEATURE_COLUMNS)
 
     if len(df) < 50:
-        raise ValueError(f"Not enough data: {len(df)} rows. Need at least 50. Run backfill first.")
+        raise ValueError(
+            f"Not enough data: {len(df)} rows. "
+            f"Need at least 50. Run backfill first."
+        )
 
     X = df[FEATURE_COLUMNS].astype(float)
+
     y = df["target"].astype(float)
-    return train_test_split(X, y, test_size=0.2, random_state=42)
+
+    return train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+    )
 
 
 def evaluate(name: str, y_test, y_pred) -> dict:
     """Compute evaluation metrics."""
+
     metrics = {
         "model": name,
-        "rmse": round(float(np.sqrt(mean_squared_error(y_test, y_pred))), 4),
-        "mae": round(float(mean_absolute_error(y_test, y_pred)), 4),
-        "r2": round(float(r2_score(y_test, y_pred)), 6),
+        "rmse": round(
+            float(np.sqrt(mean_squared_error(y_test, y_pred))),
+            4,
+        ),
+        "mae": round(
+            float(mean_absolute_error(y_test, y_pred)),
+            4,
+        ),
+        "r2": round(
+            float(r2_score(y_test, y_pred)),
+            6,
+        ),
     }
-    print(f"  [{name}] RMSE={metrics['rmse']} MAE={metrics['mae']} R2={metrics['r2']}")
+
+    print(
+        f"  [{name}] "
+        f"RMSE={metrics['rmse']} "
+        f"MAE={metrics['mae']} "
+        f"R2={metrics['r2']}"
+    )
+
     return metrics
 
 
 def train_for_day(df: pd.DataFrame, forecast_day: int):
     """Train candidate models and return best for one horizon."""
+
     print(f"\n[INFO] Training models for Day {forecast_day}...")
-    X_train, X_test, y_train, y_test = prepare_data(df, forecast_day)
+
+    X_train, X_test, y_train, y_test = prepare_data(
+        df,
+        forecast_day,
+    )
 
     candidates = {
-        "random_forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
-        "gradient_boosting": GradientBoostingRegressor(n_estimators=100, random_state=42),
-        "ridge": Pipeline([("scaler", StandardScaler()), ("model", Ridge(alpha=1.0))]),
+        "random_forest": RandomForestRegressor(
+            n_estimators=100,
+            random_state=42,
+            n_jobs=-1,
+        ),
+        "gradient_boosting": GradientBoostingRegressor(
+            n_estimators=100,
+            random_state=42,
+        ),
+        "ridge": Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("model", Ridge(alpha=1.0)),
+            ]
+        ),
     }
 
     results = {}
-    for model_name, model in candidates.items():
-        model.fit(X_train, y_train)
-        preds = model.predict(X_test)
-        results[model_name] = (model, evaluate(model_name, y_test, preds))
 
-    best_name = min(results, key=lambda key: results[key][1]["rmse"])
+    for model_name, model in candidates.items():
+
+        model.fit(X_train, y_train)
+
+        preds = model.predict(X_test)
+
+        results[model_name] = (
+            model,
+            evaluate(model_name, y_test, preds),
+        )
+
+    best_name = min(
+        results,
+        key=lambda key: results[key][1]["rmse"],
+    )
+
     best_model, best_metrics = results[best_name]
-    print(f"  -> Best model for Day {forecast_day}: {best_name}")
+
+    print(
+        f"  -> Best model for Day {forecast_day}: "
+        f"{best_name}"
+    )
+
     return best_name, best_model, best_metrics
 
 
-def save_model(best_model, metrics: dict, forecast_day: int, best_name: str, city: str, feature_rows: int) -> None:
-    """Log run and register model version for a forecast day."""
+def save_model(
+    best_model,
+    metrics: dict,
+    forecast_day: int,
+    best_name: str,
+    city: str,
+    feature_rows: int,
+) -> None:
+    """Log run and register model version."""
+
     run_stamp = datetime.utcnow().strftime("%Y-%m-%d_%H%M")
+
     train_date = datetime.utcnow().strftime("%Y-%m-%d")
+
     registry_name = f"aqi_{city}_day{forecast_day}"
 
-    with mlflow.start_run(run_name=f"{city}_day{forecast_day}_{best_name}_{run_stamp}") as run:
+    with mlflow.start_run(
+        run_name=f"{city}_day{forecast_day}_{best_name}_{run_stamp}"
+    ) as run:
+
         mlflow.log_params(
             {
                 "city": city,
@@ -112,6 +212,7 @@ def save_model(best_model, metrics: dict, forecast_day: int, best_name: str, cit
                 "feature_rows": feature_rows,
             }
         )
+
         mlflow.log_metrics(
             {
                 "rmse": metrics["rmse"],
@@ -125,34 +226,91 @@ def save_model(best_model, metrics: dict, forecast_day: int, best_name: str, cit
             artifact_path="model",
             registered_model_name=registry_name,
         )
+
         print(f"[INFO] Registered model URI: {info.model_uri}")
 
         client = MlflowClient()
-        versions = client.search_model_versions(f"name='{registry_name}'")
-        if versions:
-            latest = max(versions, key=lambda version: int(version.version))
-            client.set_model_version_tag(registry_name, latest.version, "city", city)
-            client.set_model_version_tag(registry_name, latest.version, "forecast_day", str(forecast_day))
-            client.set_model_version_tag(registry_name, latest.version, "training_date", train_date)
-            client.set_model_version_tag(registry_name, latest.version, "run_id", run.info.run_id)
-            client.set_registered_model_alias(registry_name, "production", latest.version)
 
-    print(f"[OK] Day {forecast_day} registered as {registry_name}@production")
+        versions = client.search_model_versions(
+            f"name='{registry_name}'"
+        )
+
+        if versions:
+
+            latest = max(
+                versions,
+                key=lambda version: int(version.version),
+            )
+
+            client.set_model_version_tag(
+                registry_name,
+                latest.version,
+                "city",
+                city,
+            )
+
+            client.set_model_version_tag(
+                registry_name,
+                latest.version,
+                "forecast_day",
+                str(forecast_day),
+            )
+
+            client.set_model_version_tag(
+                registry_name,
+                latest.version,
+                "training_date",
+                train_date,
+            )
+
+            client.set_model_version_tag(
+                registry_name,
+                latest.version,
+                "run_id",
+                run.info.run_id,
+            )
+
+            client.set_registered_model_alias(
+                registry_name,
+                "production",
+                latest.version,
+            )
+
+    print(
+        f"[OK] Day {forecast_day} "
+        f"registered as "
+        f"{registry_name}@production"
+    )
 
 
 def run() -> None:
-    """Load data -> train/register best models for day1/day2/day3."""
+    """Load data -> train/register best models."""
+
     city, _, _ = get_city_config()
+
     setup_mlflow()
 
     df = load_features()
 
     for forecast_day in [1, 2, 3]:
-        best_name, best_model, best_metrics = train_for_day(df, forecast_day)
-        save_model(best_model, best_metrics, forecast_day, best_name, city, len(df))
+
+        best_name, best_model, best_metrics = train_for_day(
+            df,
+            forecast_day,
+        )
+
+        save_model(
+            best_model,
+            best_metrics,
+            forecast_day,
+            best_name,
+            city,
+            len(df),
+        )
 
     print("\n[DONE] Training pipeline completed.")
 
 
 if __name__ == "__main__":
     run()
+
