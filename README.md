@@ -1,6 +1,6 @@
 # Pearls AQI Predictor — Karachi
 
-> **A fully serverless, end-to-end MLOps system that forecasts Air Quality Index (AQI) for Karachi, Pakistan across a 3-day horizon — powered by Open-Meteo APIs, DVC, MLflow on DagsHub, and a live Gradio UI on Hugging Face Spaces.**
+> **A fully serverless, end-to-end MLOps system that forecasts Air Quality Index (AQI) for Karachi, Pakistan across a 3-day horizon powered by Open-Meteo APIs, DVC, MLflow on DagsHub, and a live Gradio UI on Hugging Face Spaces.**
 
 **Live App:** [https://huggingface.co/spaces/MuseerahFatima/Karachi-aqi-predictor](https://huggingface.co/spaces/MuseerahFatima/Karachi-aqi-predictor)
 
